@@ -1,10 +1,10 @@
 #!/bin/bash
-# Read, log and send temperature readings from CPU and external temperature sensors (rev.20230502)
+# Read, log and send temperature readings from CPU and external temperature sensors (rev.20230504)
 
 DIR="/opt/rpi-ds18b20" # location for log files (must be absolute path)
 ERRLOG="temp_err.log" # error log filename
 TMPLOG="temp.log" # temperatures log filename
-URL="http://192.168.1.7/t/t.cgi" # URL to server-side script (change according to your server)
+URL="http://192.168.1.7/t/logtemp.cgi" # URL to server-side script (change according to your server address)
 SENS1="28-041702432aff" # change according to your sensor unique ID
 SENS2="28-0417028cc1ff" # change according to your sensor unique ID
 SENS3="28-051701be51ff" # change according to your sensor unique ID
