@@ -1,0 +1,60 @@
+# RPI, GPIO, ONEWIRE AND THE DS18B20 (rev.20230504)
+
+Using one-wire sensors can be confusing at first and may not always work right for a number of reasons, so here are some hints to help you get going:
+
+There are 3 kernel modules which need to be loaded to be able to read the ds18b20 sensors: wire, w1-gpio and w1-therm.
+wire is loaded automatically by simply loading w1-gpio, either at boot time or once the RPi as already booted.
+
+To automatically load w1-gpio at boot time, either enable one-wire from the 'Interfacing options' menu of the 'raspi-config' command, or insert the line
+'dtoverlay=w1-gpio'
+in the /boot/config.txt file.
+
+If your one-wire sensors are connected to a different gpio pin than the default gpio4, also specify the correct pin on the line, e.g.
+'dtoverlay=w1-gpio,gpiopin=3'
+
+To manually load the module after boot, use the command 'dtoverlay w1-gpio', or 'dtoverlay w1-gpio gpiopin=3'.
+
+There is no overlay to load the ds18b20 driver automatically, but you could add the command 'modprobe w1-therm' in /etc/rc.local, or issue that command manually.
+
+To verify that wire, w1-gpio and w1-therm have been loaded succesfully, use the command 'lsmod | grep w1' which should print the following output:
+w1_therm               32768  0
+w1_gpio                16384  0
+wire                   45056  2 w1_gpio,w1_therm
+
+If not, use the command 'modprobe w1-gpio && modprobe w1-therm' to retry loading the modules and check again with the 'lsmod | grep w1' command.
+If all three modules are listed, The kernel modules and ds18xxx driver are loaded.
+
+Now it should be possible to read all the sensors at once with the 'cat /sys/bus/w1/devices/28=*/temperature' command which output something like:
+17943
+17801
+18137
+
+If so, everything is working and you're all set.
+
+If not, it could have failed for a number of reasons:
+Case 1, the 'ls /sys/bus' command doesn't show the w1 directory, which means the w1_gpio module didn't load correctly.
+Case 2a, the 'ls /sys/bus/w1/devices' command doesn't show any 28-xxxxxxxxxff subdirectory, which means w1-therm could not find any sensor, either because they are not connected correctly, or they can't communicate with the driver because of some issue with the pull-up resistor.
+Case 2b, the 'ls /sys/bus/w1/devices' command shows subdirectories with names changing randomly such as 03-00xxx, 04-00xx, 0Bxxx, etc, which means w1-gpio is detecting something but w1-therm doesn't recognize the sensors.
+Case 4, the 'cat /sys/bus/w1/devices/28-*/temperature' command works, but the temperature readings all show 85000, which means the sensors are detected and can communicate but never received any request for measuring the temperature.
+
+Some solutions:
+Case 1
+- The command 'dmesg | grep -i w1' might give you some hints, but most likely all you can do is reboot to reload the kernel modules. You could try to manually unload and reload the w1-gpio module but it is likely to crash the RPi.
+Case 2a
+- Double-check your wiring, making sure the right legs of the ds18b20 are connected to GND, 3V3 and GPIO4. If so, check the pull-up resistor (see case 2b).
+Case 2b
+- The communication isn't good enough and is typically due to an issue with the pull-up resistor.
+- Normally a 4.7k Ohm pull-up resistor is required between 3V3 and GPIO4, but the RPi has an internal pull-up resistor which allows connecting the sensors without adding any resistor, however, it may be necessary to manually enable the internal pull-up to get the sensors properly initialized after booting.
+- Here are a few ways to enable the internal pull-up, in case one of these doesn't work with your particular HW/OS configuration:
+  1) In /boot/config.txt, change 'dtoverlay=w1-gpio' to 'dtoverlay=w1-gpio,pullup=0'. Oddly enough, here 0 means enabled. Note that it won't take effect until the next reboot, but you can use the command 'echo 0 >/sys/bus/w1/devices/w1_bus_master1/w1_master_pullup' to enable it immediately.
+  2) Use the 'raspi-gpio set 4 pu' command which can be installed with 'apt install raspi-gpio'. You can also check the state of the pull-up with the command 'raspi-gpio get 4'.
+  3) Use the pigpio utilities which can be installed with 'apt install pigpio'. Once pigpio is installed, the command sequence to use is:
+    'mount -t configfs none /config' (needed by the pigpio daemon)
+    'pigpiod -m' (run pigpiod in the background, -m disables cpu-intensive alert monitoring)
+    'pigs PUD 4 u' (activate internal pull-up resistor)
+- It should sort out any pull-up issue and the 28-0xxxx entries should appear in /sys/bus/w1/devices.
+- Note that if you are running very long or thin wires to your sensors, you may still need to add an external pull-up resistor, as the internal one may be too weak.
+Case 3
+- Force the driver to reset the sensor with the command:
+  'echo 28-xxx >/sys/bus/w1/devices/w1_bus_master1/w1_master_remove' (replace "28-xxx" with the actual number of your sensor)
+ - Within 10 seconds the sensor should reappear in /sys/bus/w1/devices and this time the 'cat /sys/bus/w1/devices/28-0*/temperature' command should print the correct temperature value.
