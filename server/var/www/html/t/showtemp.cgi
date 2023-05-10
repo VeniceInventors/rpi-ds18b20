@@ -1,5 +1,5 @@
 #! /usr/bin/perl
-# display chart from temp.log data (rev.20230509)
+# showtemp.cgi - display chart from temp.log data (rev.20230510)
 # from a web browser: "http://<your_server_address>/t/showtemp.cgi?days=1&hours=12"
 # or to see last 24h: "http://<your_server_address>/t/showtemp.cgi"
 
@@ -25,23 +25,36 @@ if ($d) { $lines  = int((60/$minutes) * 60 * 24 * $d) }   # set number of lines 
 if ($h) { $lines += int((60/$minutes) * 60 * $h) }        # set number of lines per hours to read from log
 unless ($lines) { $lines = int((60/$minutes) * 60 * 24) } # default to the last 24 hours if no value was provided
 
-@log = `tail -n $lines $logfile`; # retrieve desired number of lines from log
+@log = `tail -n $lines $logfile`;       # retrieve desired number of lines from log
+$degC = '\\u00B0C'; $degF = '\\u00B0F'; # shorthand for degrees symbol
 
 # scan through each line of the log
 foreach $line (@log) { chomp; # remove newline char
- ($date,$time,$temp0c,$temp1c,$temp2c,$temp3c) = split(" ",$line); # split array to read each value
- $x .= '"' . substr($date,5,5) . " " . substr($time,0,5) . '",';   # shorten date/time to "MM-DD hh:mm"
- # create arrays of values for each temp sensor
- $y0 .= $temp0c/1000 .','; # divide by 1000 to convert the celsius*1000 integers to floats
- $y1 .= ($temp1c ne "-") ? $temp1c/1000 .',' : ','; # if sensor couldn't be read the value in the log
- $y2 .= ($temp2c ne "-") ? $temp2c/1000 .',' : ','; # will be "-", in that case put empty value so that
- $y3 .= ($temp3c ne "-") ? $temp3c/1000 .',' : ','; # the point isn't plotted but still counted
+ ($date,$time,$tempmc0,$tmpmc1,$tempmc2,$tempmc3) = split(" ",$line); # split array to read each value
+ $x .= '"' . substr($date,5,5) . " " . substr($time,0,5) . '",';      # shorten date/time to "MM-DD hh:mm"
+ # format millicelsius values to xx.x, or leave empty if sensor reading was invalid
+ if ($tempmc0 ne "-") { $tempc0 = int($tempmc0/100)/10; } else { tempc0 = ''; }
+ if ($tempmc1 ne "-") { $tempc1 = int($tempmc1/100)/10; } else { tempc1 = ''; }
+ if ($tempmc2 ne "-") { $tempc2 = int($tempmc2/100)/10; } else { tempc2 = ''; }
+ if ($tempmc3 ne "-") { $tempc3 = int($tempmc3/100)/10; } else { tempc3 = ''; }
+ # create arrays of values for chart
+ $y0 .= "$tempc0,";
+ $y1 .= "$tempc1,";
+ $y2 .= "$tempc2,";
+ $y3 .= "$tempc3,";
 }
 
 # convert most recent temp values from C to F, for chart title
-$temp1f = $temp1c*1.8/1000+32; 
-$temp2f = $temp2c*1.8/1000+32;
-$temp3f = $temp3c*1.8/1000+32;
+$tempf0 = int(1.8*$tempmc0/100)/10+32;
+$tempf1 = int(1.8*$tempmc1/100)/10+32;
+$tempf2 = int(1.8*$tempmc2/100)/10+32;
+$tempf3 = int(1.8*$tempmc3/100)/10+32;
+
+# display name and C/F temps or "---" to emphasize invalid readings
+$header  =    "$name0: " . ($tempmc0 ne "-") ? "$tempc0$degC / $tempf0$degF" : "---";
+$header .= " - $name1: " . ($tempmc1 ne "-") ? "$tempc1$degC / $tempf1$degF" : "---";
+$header .= " - $name2: " . ($tempmc2 ne "-") ? "$tempc2$degC / $tempf2$degF" : "---";
+$header .= " - $name3: " . ($tempmc3 ne "-") ? "$tempc3$degC / $tempf3$degF" : "---";
 
 # send html page to browser
 print <<EOF;
@@ -58,35 +71,17 @@ new Chart("myChart", {
   type: "line",
   data: {
     labels: xValues,
-    datasets: [{
-      label: "$name0",
-      data: [$y0],
-      borderColor: "red",
-      fill: false
-    }, {.
-      label: "$name1",
-      data: [$y1],
-      borderColor: "orange",
-      fill: false
-    }, {.
-      label: "$name2",
-      data: [$y2],
-      borderColor: "green",
-      fill: false
-    }, {.
-      label: "$name3",
-      data: [$y3],
-      borderColor: "teal",
-      fill: false
-    }]
+    datasets: [
+      { label: "$name0", data: [$y0], borderColor: "red",    fill: false }
+     ,{ label: "$name1", data: [$y1], borderColor: "orange", fill: false }
+     ,{ label: "$name2", data: [$y2], borderColor: "green",  fill: false }
+     ,{ label: "$name3", data: [$y3], borderColor: "teal",   fill: false }
+    ]
   },
   options: {
     title: {
       display: true,
-      text: "$name0: "+$temp0c/1000+"\\u00B0C - \
-             $name1: "+$temp1c/1000+"\\u00B0C / $temp1f\\u00B0F - \
-             $name2: "+$temp2c/1000+"\\u00B0C / $temp2f\\u00B0F - \
-             $name3: "+$temp3c/1000+"\\u00B0C / $temp3f\\u00B0F",
+      text: "$header",
       fontSize: 16,
       fontColor: '#a8f'
     },
@@ -100,10 +95,10 @@ new Chart("myChart", {
         label: function(tooltipItem, data) {
           var label = data.datasets[tooltipItem.datasetIndex].label || '';
           if (label) { label += ': '; }
-          label += Math.round(tooltipItem.yLabel * 100) / 100;
-          label += '\\u00B0C ';
+          label += tooltipItem.yLabel;
+          label += '$degC / ';
           label += Math.round(tooltipItem.yLabel * 18 + 320) / 10;
-          label += '\\u00B0F';
+          label += '$degF';
           return label;
         }
       }
@@ -111,7 +106,8 @@ new Chart("myChart", {
   }
 });
 </script>
-
+</body>
+</html>
 EOF
 ;
 exit;
